@@ -718,3 +718,431 @@ window.resetAppData = resetAppData;
 window.setMood = setMood;
 window.finishRecap = finishRecap;
 window.toggleRecapTask = toggleRecapTask;
+
+/* ==================== TASKQUEST V2 COMPATIBILITY / HABITICA-LIKE LAYER ====================
+   This layer replaces the broken DOM bindings from the previous app.js version while
+   keeping the existing HTML structure and stored data compatible.
+*/
+(function () {
+  const oldDefaultStreak = appState.user.streak || 0;
+  appState.user.streak = oldDefaultStreak;
+  appState.user.lastStreakDate = appState.user.lastStreakDate || null;
+  appState.user.totalXpEarned = appState.user.totalXpEarned || 0;
+  appState.user.totalTasksCompleted = appState.user.totalTasksCompleted || 0;
+  appState.user.moodHistory = appState.user.moodHistory || {};
+  appState.settings.soundEnabled = appState.settings.soundEnabled !== false;
+
+  function dayKey(date) {
+    const d = new Date(date || Date.now());
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  function escapeText(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function (char) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char];
+    });
+  }
+
+  function todayTasks() {
+    const key = dayKey();
+    return appState.tasks.filter(function (task) {
+      return dayKey(task.createdAt) === key;
+    });
+  }
+
+  function updateHeaderV2() {
+    const level = document.getElementById('level-value');
+    const fill = document.getElementById('xp-bar-fill');
+    const xpText = document.getElementById('xp-text');
+    const coins = document.getElementById('coins-value');
+    if (level) level.textContent = appState.user.level;
+    if (fill) fill.style.width = Math.min(100, (appState.user.xp / appState.user.maxXp) * 100) + '%';
+    if (xpText) xpText.textContent = appState.user.xp + ' / ' + appState.user.maxXp + ' XP';
+    if (coins) coins.textContent = appState.user.coins;
+  }
+
+  function renderHomeV2() {
+    const list = document.getElementById('task-list');
+    const empty = document.getElementById('empty-state');
+    if (!list) return;
+    const tasks = todayTasks();
+    const remaining = tasks.filter(function (task) { return !task.completed; }).length;
+    const completed = tasks.length - remaining;
+    const percent = tasks.length ? Math.round(completed / tasks.length * 100) : 0;
+
+    document.getElementById('tasks-remaining').textContent =
+      tasks.length ? remaining + ' tâche(s) à faire • ' + completed + ' terminée(s)' : 'Prêt pour une nouvelle aventure ?';
+
+    list.innerHTML = tasks.map(function (task) {
+      const index = appState.tasks.indexOf(task);
+      const xp = task.xp || ({ facile: 10, moyen: 25, normal: 25, difficile: 50, cauchemar: 100 }[task.difficulty] || 25);
+      const time = task.time || 'Flexible';
+      return '<article class="task-item ' + (task.completed ? 'done' : '') + '">' +
+        '<button class="task-check ' + (task.completed ? 'checked' : '') + '" onclick="toggleTask(' + index + ')" aria-label="Terminer">' + (task.completed ? '✓' : '') + '</button>' +
+        '<span class="task-emoji">' + escapeText(task.emoji || '📝') + '</span>' +
+        '<div class="task-info"><div class="task-name">' + escapeText(task.name || 'Quête') + '</div>' +
+        '<div class="task-meta">' + escapeText(time) + ' • +' + xp + ' XP</div></div>' +
+        '<button class="task-delete" onclick="deleteTask(' + index + ')" aria-label="Supprimer">✕</button>' +
+        '</article>';
+    }).join('');
+
+    if (empty) empty.style.display = tasks.length ? 'none' : 'block';
+    updateHeaderV2();
+  }
+
+  function addXpv2(amount) {
+    appState.user.xp += amount;
+    appState.user.totalXpEarned += amount;
+    while (appState.user.xp >= appState.user.maxXp) {
+      appState.user.xp -= appState.user.maxXp;
+      appState.user.level += 1;
+      appState.user.maxXp = Math.round(appState.user.maxXp * 1.15);
+      appState.user.coins += 50;
+      playSound('levelup');
+      setTimeout(function () { alert('🎉 Niveau ' + appState.user.level + ' ! +50 🪙'); }, 50);
+    }
+  }
+
+  function updateStreakV2() {
+    const today = dayKey();
+    const last = appState.user.lastStreakDate;
+    if (last === today) return;
+    if (!last) {
+      appState.user.streak = 1;
+    } else {
+      const a = new Date(last + 'T12:00:00');
+      const b = new Date(today + 'T12:00:00');
+      const days = Math.round((b - a) / 86400000);
+      appState.user.streak = days === 1 ? (appState.user.streak || 0) + 1 : 1;
+    }
+    appState.user.lastStreakDate = today;
+  }
+
+  function toggleTaskV2(index) {
+    const task = appState.tasks[index];
+    if (!task) return;
+    if (task.completed) {
+      task.completed = false;
+      saveData();
+      renderHomeV2();
+      return;
+    }
+    task.completed = true;
+    const xp = task.xp || ({ facile: 10, moyen: 25, normal: 25, difficile: 50, cauchemar: 100 }[task.difficulty] || 25);
+    const coins = ({ facile: 1, moyen: 3, normal: 3, difficile: 6, cauchemar: 10 }[task.difficulty] || 3);
+    appState.user.coins += coins;
+    appState.user.totalTasksCompleted += 1;
+    addXpv2(xp);
+    updateStreakV2();
+    saveData();
+    playSound('complete');
+    renderHomeV2();
+    renderStatsV2();
+  }
+
+  function deleteTaskV2(index) {
+    if (!appState.tasks[index]) return;
+    if (!confirm('Supprimer cette quête ?')) return;
+    appState.tasks.splice(index, 1);
+    saveData();
+    renderHomeV2();
+  }
+
+  function openTaskModalV2() {
+    const modal = document.getElementById('add-task-modal');
+    if (!modal) return;
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.getElementById('task-name-input').focus();
+  }
+
+  function closeTaskModalV2() {
+    const modal = document.getElementById('add-task-modal');
+    if (!modal) return;
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
+    document.getElementById('task-name-input').value = '';
+    document.getElementById('task-emoji-input').value = '';
+    document.querySelectorAll('.diff-btn').forEach(function (btn) {
+      btn.classList.toggle('selected', btn.dataset.diff === 'facile');
+    });
+  }
+
+  function addTaskV2() {
+    const nameInput = document.getElementById('task-name-input');
+    const name = nameInput.value.trim();
+    if (!name) {
+      nameInput.focus();
+      return;
+    }
+    const emoji = document.getElementById('task-emoji-input').value.trim() || '📝';
+    const difficulty = document.querySelector('.diff-btn.selected')?.dataset.diff || 'facile';
+    const time = document.getElementById('task-time-select').value;
+    const xp = ({ facile: 10, moyen: 25, difficile: 50 }[difficulty] || 25);
+
+    appState.tasks.push({
+      id: Date.now() + Math.random(),
+      name: name,
+      emoji: emoji,
+      difficulty: difficulty,
+      time: time,
+      xp: xp,
+      completed: false,
+      createdAt: new Date().toISOString()
+    });
+    saveData();
+    closeTaskModalV2();
+    playSound('complete');
+    renderHomeV2();
+  }
+
+  function renderStatsV2() {
+    const tasks = todayTasks();
+    const done = tasks.filter(function (task) { return task.completed; }).length;
+    const percent = tasks.length ? Math.round(done / tasks.length * 100) : 0;
+    const ring = document.getElementById('score-ring');
+    if (ring) ring.style.background = 'conic-gradient(var(--accent) ' + percent + '%, #000 ' + percent + '%)';
+    const score = document.getElementById('score-value');
+    if (score) score.textContent = percent + '%';
+
+    const moodHistory = document.getElementById('mood-history');
+    const moods = appState.user.moodHistory || {};
+    if (moodHistory) {
+      let html = '';
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const key = dayKey(d);
+        html += '<div style="text-align:center"><div class="mood-dot">' + (moods[key] || (key === dayKey() ? (appState.user.mood || '·') : '·')) + '</div><small>' +
+          d.toLocaleDateString('fr-FR', { weekday: 'short' }).slice(0, 2) + '</small></div>';
+      }
+      moodHistory.innerHTML = html;
+    }
+    const level = document.getElementById('general-level-value');
+    if (level) level.textContent = appState.user.level;
+    updateHeaderV2();
+  }
+
+  function renderShopV2() {
+    const content = document.getElementById('shop-content');
+    if (!content) return;
+    const tab = appState.shopTab || 'themes';
+    document.querySelectorAll('.shop-tab').forEach(function (btn) {
+      btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+
+    if (tab === 'gacha') {
+      content.innerHTML =
+        '<div class="stat-card" style="text-align:center"><div style="font-size:45px">🎁</div><h2>Coffre d’aventure</h2><p style="color:var(--text-dim)">100 🪙 • récompense aléatoire</p><button class="btn-primary" style="padding:10px 16px;border:2px solid #000;border-radius:8px" onclick="openChest()">Ouvrir le coffre</button></div>';
+      return;
+    }
+
+    if (tab === 'icons') {
+      content.innerHTML =
+        '<div class="stat-card"><h2>🎒 Inventaire</h2><p style="color:var(--text-dim);font-size:12px">Objets débloqués : ' +
+        (appState.shop.purchased || []).length + '</p></div>';
+      return;
+    }
+
+    const themes = [
+      { id: 'dark', name: '🌙 Nuit', price: 0 },
+      { id: 'ocean', name: '🌊 Océan', price: 250 },
+      { id: 'forest', name: '🌲 Forêt', price: 400 },
+      { id: 'sunset', name: '🌅 Sunset', price: 600 }
+    ];
+
+    content.innerHTML = themes.map(function (theme) {
+      const owned = theme.price === 0 || (appState.shop.purchased || []).indexOf(theme.id) !== -1;
+      const active = (appState.shop.activeTheme || 'dark') === theme.id;
+      return '<div class="shop-item"><div><strong>' + theme.name + '</strong><div style="font-size:10px;color:var(--text-dim)">' +
+        (active ? 'Équipé' : owned ? 'Disponible dans ton inventaire' : 'Nouveau thème') + '</div></div>' +
+        '<button ' + (active || (!owned && appState.user.coins < theme.price) ? 'disabled' : '') +
+        ' onclick="' + (owned ? 'equipThemeV2(\'' + theme.id + '\')' : 'buyThemeV2(\'' + theme.id + '\')') + '">' +
+        (active ? '✓' : owned ? 'Équiper' : theme.price + ' 🪙') + '</button></div>';
+    }).join('');
+  }
+
+  function applyThemeV2(theme) {
+    const root = document.documentElement;
+    const themes = {
+      dark: ['#16121f', '#241c35', '#6c5ce7', '#ff9f43'],
+      ocean: ['#101b2d', '#172b45', '#2d9cdb', '#56ccf2'],
+      forest: ['#101d18', '#193128', '#27ae60', '#f2c94c'],
+      sunset: ['#24151b', '#3b2229', '#e76f51', '#f4a261']
+    };
+    const t = themes[theme] || themes.dark;
+    root.style.setProperty('--bg', t[0]);
+    root.style.setProperty('--bg-card', t[1]);
+    root.style.setProperty('--accent', t[2]);
+    root.style.setProperty('--accent2', t[3]);
+  }
+
+  function buyThemeV2(id) {
+    const prices = { ocean: 250, forest: 400, sunset: 600 };
+    const price = prices[id] || 0;
+    if (appState.user.coins < price) return alert('🪙 Pas assez de pièces !');
+    appState.user.coins -= price;
+    appState.shop.purchased = appState.shop.purchased || [];
+    appState.shop.purchased.push(id);
+    appState.shop.activeTheme = id;
+    applyThemeV2(id);
+    saveData();
+    renderShopV2();
+    updateHeaderV2();
+  }
+
+  function equipThemeV2(id) {
+    appState.shop.activeTheme = id;
+    applyThemeV2(id);
+    saveData();
+    renderShopV2();
+  }
+
+  function openChestV2() {
+    if (appState.user.coins < 100) return alert('🪙 Pas assez de pièces !');
+    const rewards = ['✨ Badge Aventurier', '🎨 Couleur rare', '🧑‍🚀 Avatar spécial'];
+    appState.user.coins -= 100;
+    appState.shop.purchased = appState.shop.purchased || [];
+    const reward = rewards[Math.floor(Math.random() * rewards.length)];
+    appState.shop.purchased.push(reward);
+    saveData();
+    playSound('chest-open');
+    alert('🎁 Tu as obtenu : ' + reward + ' !');
+    renderShopV2();
+    updateHeaderV2();
+  }
+
+  function renderSettingsV2() {
+    document.getElementById('recap-time').value = appState.settings.recapTime || '20:00';
+    document.getElementById('notif-toggle').checked = !!appState.settings.notificationsEnabled;
+    document.getElementById('notif-time').value = appState.notifications.time || '18:00';
+    document.getElementById('age-input').value = appState.user.age || 14;
+  }
+
+  function setMoodV2(mood) {
+    appState.user.mood = mood;
+    appState.user.moodHistory = appState.user.moodHistory || {};
+    appState.user.moodHistory[dayKey()] = mood;
+    saveData();
+    renderStatsV2();
+  }
+
+  function renderRecapV2() {
+    const tasks = todayTasks();
+    const list = document.getElementById('recap-task-list');
+    const xp = tasks.filter(function (t) { return t.completed; }).reduce(function (sum, t) {
+      return sum + (t.xp || 0);
+    }, 0);
+    const coins = tasks.filter(function (t) { return t.completed; }).reduce(function (sum, t) {
+      return sum + ({ facile: 1, moyen: 3, normal: 3, difficile: 6, cauchemar: 10 }[t.difficulty] || 3);
+    }, 0);
+    document.getElementById('reward-xp').textContent = xp;
+    document.getElementById('reward-coins').textContent = coins;
+    if (list) list.innerHTML = tasks.length ? tasks.map(function (task) {
+      return '<div class="shop-item"><span>' + escapeText(task.emoji) + ' ' + escapeText(task.name) + '</span><b>' + (task.completed ? '✓' : '—') + '</b></div>';
+    }).join('') : '<p style="color:var(--text-dim)">Aucune quête aujourd’hui.</p>';
+  }
+
+  function showDailyRecapV2() {
+    renderRecapV2();
+    document.querySelectorAll('.page').forEach(function (page) { page.classList.remove('active'); });
+    document.getElementById('page-recap')?.classList.add('active');
+    document.querySelectorAll('.nav-btn').forEach(function (btn) { btn.classList.remove('active'); });
+  }
+
+  function loadPageV2(pageName) {
+    if (!['home', 'stats', 'shop', 'settings'].includes(pageName)) return;
+    document.querySelectorAll('.page').forEach(function (page) { page.classList.remove('active'); });
+    document.getElementById('page-' + pageName)?.classList.add('active');
+    document.querySelectorAll('.nav-btn').forEach(function (btn) {
+      btn.classList.toggle('active', btn.dataset.page === pageName);
+    });
+    if (pageName === 'home') renderHomeV2();
+    if (pageName === 'stats') renderStatsV2();
+    if (pageName === 'shop') renderShopV2();
+    if (pageName === 'settings') renderSettingsV2();
+  }
+
+  function finishRecapV2() {
+    appState.lastRecapDate = dayKey();
+    saveData();
+    loadPageV2('home');
+  }
+
+  function setupV2() {
+    appState.shop = appState.shop || { themes: [], profiles: [], purchased: [] };
+    appState.shop.purchased = appState.shop.purchased || [];
+    appState.shop.activeTheme = appState.shop.activeTheme || 'dark';
+    applyThemeV2(appState.shop.activeTheme);
+
+    document.querySelectorAll('.nav-btn[data-page]').forEach(function (btn) {
+      btn.onclick = function () { loadPageV2(btn.dataset.page); };
+    });
+    document.getElementById('add-task-btn').onclick = openTaskModalV2;
+    document.getElementById('cancel-task-btn').onclick = closeTaskModalV2;
+    document.getElementById('confirm-task-btn').onclick = addTaskV2;
+    document.getElementById('add-task-modal').onclick = function (e) { if (e.target === this) closeTaskModalV2(); };
+
+    document.querySelectorAll('.diff-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        document.querySelectorAll('.diff-btn').forEach(function (b) { b.classList.remove('selected'); });
+        btn.classList.add('selected');
+      };
+    });
+    document.querySelectorAll('.shop-tab').forEach(function (btn) {
+      btn.onclick = function () {
+        appState.shopTab = btn.dataset.tab;
+        saveData();
+        renderShopV2();
+      };
+    });
+
+    document.getElementById('recap-time').onchange = function () { appState.settings.recapTime = this.value; saveData(); };
+    document.getElementById('notif-toggle').onchange = function () { appState.settings.notificationsEnabled = this.checked; saveData(); };
+    document.getElementById('notif-time').onchange = function () { appState.notifications.time = this.value; saveData(); };
+    document.getElementById('age-input').onchange = function () { appState.user.age = Number(this.value) || 14; saveData(); };
+    document.getElementById('reset-data-btn').onclick = resetAppData;
+
+    document.getElementById('recap-validate-btn').onclick = function () { showRecapStepV2('rewards'); };
+    document.getElementById('recap-mood-next-btn').onclick = function () { showRecapStepV2('mood'); };
+    document.getElementById('recap-close-btn').onclick = function () { loadPageV2('home'); };
+    document.querySelectorAll('.mood-btn').forEach(function (btn) {
+      btn.onclick = function () { setMoodV2(btn.dataset.mood); showRecapStepV2('done'); };
+    });
+
+    renderHomeV2();
+    renderStatsV2();
+    renderShopV2();
+    renderSettingsV2();
+  }
+
+  function showRecapStepV2(step) {
+    document.querySelectorAll('.recap-step').forEach(function (el) { el.classList.remove('active'); });
+    document.getElementById('recap-step-' + step)?.classList.add('active');
+  }
+
+  // Replace the broken original entry points.
+  window.toggleTask = toggleTaskV2;
+  window.deleteTask = deleteTaskV2;
+  window.openTaskModal = openTaskModalV2;
+  window.closeTaskModal = closeTaskModalV2;
+  window.openChest = openChestV2;
+  window.buyItem = buyThemeV2;
+  window.equipThemeV2 = equipThemeV2;
+  window.buyThemeV2 = buyThemeV2;
+  window.loadPage = loadPageV2;
+  window.finishRecap = finishRecapV2;
+  window.setMood = setMoodV2;
+
+  // The original DOMContentLoaded handler calls initApp, so replace it too.
+  window.initApp = function () {
+    loadData();
+    if (appState.user.moodHistory == null) appState.user.moodHistory = {};
+    setupV2();
+    if (!localStorage.getItem('firstLaunch')) {
+      showFirstLaunchSetup();
+      localStorage.setItem('firstLaunch', 'true');
+    }
+    checkDailyRecap = function () {};
+  };
+})();
