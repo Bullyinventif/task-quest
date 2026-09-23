@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>TaskQuest</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#6c5ce7">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <header id="top-bar">
+    <div class="stat level-box">
+      <span class="label">NIV</span>
+      <span id="level-value">1</span>
+    </div>
+    <div class="stat xp-box">
+      <div class="xp-bar-bg"><div id="xp-bar-fill"></div></div>
+      <span id="xp-text">0 / 100 XP</span>
+    </div>
+    <div class="stat coins-box">
+      <span class="coin-icon">🪙</span>
+      <span id="coins-value">0</span>
+    </div>
+  </header>
+
+  <main id="page-container">
+
+    <section id="page-home" class="page active">
+      <h1>Mes Quêtes du jour</h1>
+      <p id="tasks-remaining">0 tâche(s) à faire</p>
+      <div id="task-list"></div>
+      <p id="empty-state" class="empty-state">Aucune tâche pour l'instant. Appuie sur + pour en créer une !</p>
+    </section>
+
+    <section id="page-stats" class="page">
+      <h1>Statistiques</h1>
+      <div class="stat-card">
+        <h2>Score du jour</h2>
+        <div class="score-ring-container">
+          <div id="score-ring"><span id="score-value">0%</span></div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <h2>Humeur des 7 derniers jours</h2>
+        <div id="mood-history"></div>
+      </div>
+      <div class="stat-card">
+        <h2>Niveau général</h2>
+        <p id="general-level-info">Niveau général : <span id="general-level-value">1</span></p>
+      </div>
+    </section>
+
+    <section id="page-shop" class="page">
+      <h1>Boutique</h1>
+      <div class="shop-tabs">
+        <button class="shop-tab active" data-tab="themes">Thèmes</button>
+        <button class="shop-tab" data-tab="icons">Icônes</button>
+        <button class="shop-tab" data-tab="gacha">Coffres</button>
+      </div>
+      <div id="shop-content"></div>
+    </section>
+
+    <section id="page-settings" class="page">
+      <h1>Paramètres</h1>
+      <div class="settings-group">
+        <label>Heure du récap de fin de journée</label>
+        <input type="time" id="recap-time" value="21:00">
+      </div>
+      <div class="settings-group">
+        <label>Notifications</label>
+        <div class="toggle-row">
+          <span>Activer les rappels</span>
+          <input type="checkbox" id="notif-toggle" checked>
+        </div>
+        <label>Heure du rappel</label>
+        <input type="time" id="notif-time" value="18:00">
+      </div>
+      <div class="settings-group">
+        <label>Âge (pour le niveau général)</label>
+        <input type="number" id="age-input" min="5" max="99" value="14">
+      </div>
+      <div class="settings-group danger-zone">
+        <button id="reset-data-btn">Réinitialiser toutes les données</button>
+      </div>
+    </section>
+
+    <section id="page-recap" class="page">
+      <div id="recap-container">
+        <h1>Fin de journée !</h1>
+        <div id="recap-step-tasks" class="recap-step active">
+          <h2>Récap de tes quêtes</h2>
+          <div id="recap-task-list"></div>
+          <button id="recap-validate-btn" class="btn-primary">Valider</button>
+        </div>
+        <div id="recap-step-rewards" class="recap-step">
+          <h2>Récompenses</h2>
+          <div class="reward-display">
+            <p>+<span id="reward-xp">0</span> XP</p>
+            <p>+<span id="reward-coins">0</span> 🪙</p>
+          </div>
+          <button id="recap-mood-next-btn" class="btn-primary">Continuer</button>
+        </div>
+        <div id="recap-step-mood" class="recap-step">
+          <h2>Comment était ta journée ?</h2>
+          <div id="mood-picker">
+            <button class="mood-btn" data-mood="super" style="--mood-color:#4aa8ff">😄 Super</button>
+            <button class="mood-btn" data-mood="bien" style="--mood-color:#4ad66d">🙂 Bien</button>
+            <button class="mood-btn" data-mood="milieu" style="--mood-color:#ffd93d">😐 Milieu</button>
+            <button class="mood-btn" data-mood="bof" style="--mood-color:#ff9f43">😕 Bof</button>
+            <button class="mood-btn" data-mood="mal" style="--mood-color:#ff4d4d">😢 Mal</button>
+            <button class="mood-btn" data-mood="catastrophe" style="--mood-color:#9b59d0">😩 Catastrophe</button>
+          </div>
+        </div>
+        <div id="recap-step-done" class="recap-step">
+          <h2>À demain, aventurier !</h2>
+          <button id="recap-close-btn" class="btn-primary">Fermer</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <div id="add-task-modal" class="modal">
+    <div class="modal-content">
+      <h2>Nouvelle quête</h2>
+      <input type="text" id="task-name-input" placeholder="Nom de la tâche">
+      <label>Émoji</label>
+      <input type="text" id="task-emoji-input" placeholder="📝" maxlength="2">
+      <label>Difficulté</label>
+      <div class="difficulty-picker">
+        <button class="diff-btn" data-diff="facile">Facile (10 XP)</button>
+        <button class="diff-btn" data-diff="moyen">Moyen (25 XP)</button>
+        <button class="diff-btn" data-diff="difficile">Difficile (50 XP)</button>
+      </div>
+      <label>Moment de la journée</label>
+      <select id="task-time-select">
+        <option value="matin">Matin</option>
+        <option value="midi">Midi</option>
+        <option value="apres-midi">Après-midi</option>
+        <option value="soir">Soir</option>
+      </select>
+      <div class="modal-buttons">
+        <button id="cancel-task-btn" class="btn-secondary">Annuler</button>
+        <button id="confirm-task-btn" class="btn-primary">Créer</button>
+      </div>
+    </div>
+  </div>
+
+  <nav id="bottom-nav">
+    <button class="nav-btn active" data-page="home">🏠<span>Accueil</span></button>
+    <button class="nav-btn" data-page="stats">📊<span>Stats</span></button>
+    <button id="add-task-btn" class="nav-btn add-btn">➕</button>
+    <button class="nav-btn" data-page="shop">🛒<span>Boutique</span></button>
+    <button class="nav-btn" data-page="settings">⚙️<span>Réglages</span></button>
+  </nav>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>
